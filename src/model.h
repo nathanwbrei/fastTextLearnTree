@@ -34,6 +34,18 @@ struct Node {
   bool binary;
 };
 
+
+// node for M-ary tree
+struct NodeM {
+  int32_t parent;
+  std::vector<int32_t> children;
+  int64_t count;
+  int32_t pindex;
+  real * probas;
+  // LOM tree
+};
+
+
 class Model {
   private:
     std::shared_ptr<Matrix> wi_;
@@ -54,6 +66,7 @@ class Model {
     size_t negpos;
     // used for hierarchical softmax:
     std::vector< std::vector<int32_t> > paths;
+    // binary version
     std::vector< std::vector<bool> > codes;
     std::vector<Node> tree;
 
@@ -65,6 +78,14 @@ class Model {
     void initLog();
 
     static const int32_t NEGATIVE_TABLE_SIZE = 10000000;
+
+    // M-ary version
+    Vector outputM_;
+    int32_t arity_;
+    int32_t nleaves_;
+    int32_t nnodes_;
+    std::vector< std::vector<int32_t> > codesM;
+    std::vector<NodeM> treeM;
 
   public:
     Model(std::shared_ptr<Matrix>, std::shared_ptr<Matrix>,
@@ -78,7 +99,7 @@ class Model {
 
     void predict(const std::vector<int32_t>&, int32_t,
                  std::vector<std::pair<real, int32_t>>&,
-                 Vector&, Vector&) const;
+                 Vector&, Vector&, Vector&) const;
     void predict(const std::vector<int32_t>&, int32_t,
                  std::vector<std::pair<real, int32_t>>&);
     void dfs(int32_t, int32_t, real,
@@ -86,7 +107,9 @@ class Model {
              Vector&) const;
     void findKBest(int32_t, std::vector<std::pair<real, int32_t>>&,
                    Vector&, Vector&) const;
+
     void update(const std::vector<int32_t>&, int32_t, real);
+
     void computeHidden(const std::vector<int32_t>&, Vector&) const;
     void computeOutputSoftmax(Vector&, Vector&) const;
     void computeOutputSoftmax();
@@ -94,11 +117,25 @@ class Model {
     void setTargetCounts(const std::vector<int64_t>&);
     void initTableNegatives(const std::vector<int64_t>&);
     void buildTree(const std::vector<int64_t>&);
+
     real getLoss() const;
     real sigmoid(real) const;
     real log(real) const;
 
     std::minstd_rand rng;
+
+    // M-ary version
+    void setLabelCount(int32_t);
+    void buildTreeM(const std::vector<int64_t>&);
+    void computeMArySoftmax(int32_t, Vector&) const;
+    real mAryLogistic(int32_t, int32_t, real);
+    real hierarchicalSoftmaxM(int32_t, real);
+    void dfsM(int32_t, int32_t, real,
+              std::vector<std::pair<real, int32_t>>&,
+              Vector&, Vector&) const;
+
+    // LOM tree version
+    void buildTreeLOM(const std::vector<int64_t>&);
 };
 
 }

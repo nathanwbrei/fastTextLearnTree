@@ -19,7 +19,7 @@ Model::Model(std::shared_ptr<Matrix> wi,
              std::shared_ptr<Matrix> wo,
              std::shared_ptr<Args> args,
              int32_t seed)
-  : hidden_(args->dim), output_(wo->m_), grad_(args->dim), rng(seed)
+  : hidden_(args->dim), output_(wo->m_), grad_(args->dim), rng(seed), outputM_(args->arity)
 {
   wi_ = wi;
   wo_ = wo;
@@ -27,6 +27,7 @@ Model::Model(std::shared_ptr<Matrix> wi,
   isz_ = wi->m_;
   osz_ = wo->m_;
   hsz_ = args->dim;
+  arity_ = args->arity;
   negpos = 0;
   loss_ = 0.0;
   nexamples_ = 1;
@@ -37,6 +38,11 @@ Model::Model(std::shared_ptr<Matrix> wi,
 Model::~Model() {
   delete[] t_sigmoid;
   delete[] t_log;
+  if (treeM.size() > 0) {
+    for (int32_t i = nleaves_; i < nnodes_; i++) {
+      delete[] treeM[i].probas;
+    }
+  }
 }
 
 real Model::binaryLogistic(int32_t target, bool label, real lr) {
@@ -122,12 +128,14 @@ bool Model::comparePairs(const std::pair<real, int32_t> &l,
 
 void Model::predict(const std::vector<int32_t>& input, int32_t k,
                     std::vector<std::pair<real, int32_t>>& heap,
-                    Vector& hidden, Vector& output) const {
+                    Vector& hidden, Vector& output, Vector& outputM) const {
   assert(k > 0);
   heap.reserve(k + 1);
   computeHidden(input, hidden);
   if (args_->loss == loss_name::hs) {
     dfs(k, 2 * osz_ - 2, 0.0, heap, hidden);
+  } else if (args_->loss == loss_name::hsm){
+    dfsM(k, nnodes_ - 1, 0.0, heap, hidden, outputM);
   } else {
     findKBest(k, heap, hidden, output);
   }
@@ -136,7 +144,7 @@ void Model::predict(const std::vector<int32_t>& input, int32_t k,
 
 void Model::predict(const std::vector<int32_t>& input, int32_t k,
                     std::vector<std::pair<real, int32_t>>& heap) {
-  predict(input, k, heap, hidden_, output_);
+  predict(input, k, heap, hidden_, output_, outputM_);
 }
 
 void Model::findKBest(int32_t k, std::vector<std::pair<real, int32_t>>& heap,
@@ -186,6 +194,8 @@ void Model::update(const std::vector<int32_t>& input, int32_t target, real lr) {
     loss_ += negativeSampling(target, lr);
   } else if (args_->loss == loss_name::hs) {
     loss_ += hierarchicalSoftmax(target, lr);
+  } else if (args_->loss == loss_name::hsm) {
+    loss_ += hierarchicalSoftmaxM(target, lr);
   } else {
     loss_ += softmax(target, lr);
   }
@@ -206,6 +216,9 @@ void Model::setTargetCounts(const std::vector<int64_t>& counts) {
   }
   if (args_->loss == loss_name::hs) {
     buildTree(counts);
+  }
+  if (args_->loss == loss_name::hsm) {
+    buildTreeM(counts);
   }
 }
 
@@ -314,5 +327,213 @@ real Model::sigmoid(real x) const {
     return t_sigmoid[i];
   }
 }
+
+///////////////////
+// M-ary tree code
+///////////////////
+
+// For when the number of labels is different from the first wo dimension
+void Model::setLabelCount(int32_t nlabels) {
+  osz_ = nlabels;
+}
+
+// M-ary version of buildTree
+void Model::buildTreeM(const std::vector<int64_t>& counts) {
+  // add 0 weight symbol to have well-formed n-ary tree
+  int32_t rest = osz_ % (arity_ - 1);
+  if (rest == 0){
+    nleaves_ = osz_;
+  } else {
+    nleaves_ = osz_ + arity_ - 1 - rest;
+  }
+  nnodes_ = nleaves_ + (nleaves_ - 1) / (arity_ - 1);
+  // initialize the tree
+  treeM.resize(nnodes_);
+  for (int32_t i = 0; i < nnodes_; i++) {
+    treeM[i].parent = -1;
+    treeM[i].count = 1e15;
+    treeM[i].pindex = -1;
+  }
+  for (int32_t i = 0; i < osz_; i++) {
+    treeM[i].count = counts[i];
+  }
+  for (int32_t i = osz_; i < nleaves_; i++) {
+    treeM[i].count = 0;
+  }
+  // start n-ary huffman coding
+  int32_t leaf = nleaves_ - 1;
+  int32_t node = nleaves_;
+  for (int32_t i = nleaves_; i < nnodes_; i++) {
+    treeM[i].children.resize(arity_);
+    treeM[i].probas = new real[arity_];
+    int32_t ncount = 0;
+    int32_t cid;
+    for (int32_t j = 0; j < arity_; j++) {
+      if (leaf >= 0 && treeM[leaf].count < treeM[node].count) {
+        cid = leaf--;
+      } else {
+        cid = node++;
+      }
+      treeM[i].children[j] = cid;
+      ncount += treeM[cid].count;
+      treeM[cid].parent = i;
+      treeM[cid].pindex = j;
+    }
+  }
+  // build paths and codes
+  for (int32_t i = 0; i < osz_; i++) {
+    std::vector<int32_t> path;
+    std::vector<int32_t> codeM;
+    int32_t j = i;
+    while (treeM[j].parent != -1) {
+      path.push_back(treeM[j].parent - nleaves_);
+      codeM.push_back(treeM[j].pindex);
+      j = treeM[j].parent;
+    }
+    paths.push_back(path);
+    codesM.push_back(codeM);
+  }
+}
+
+// M-ary: softmax over M children
+void Model::computeMArySoftmax(int32_t node, Vector& output) const {
+  // softmax score
+  // the row corresponding to the ith child of node node is
+  // the (node * arity_ + i)th row of wo_
+  for (int32_t i = 0; i < arity_; i++) {
+    output[i] = wo_->dotRow(hidden_, node * arity_ + i);
+  }
+  // softmax normalization
+  real max = output[0], z = 0.0;
+  for (int32_t i = 0; i < arity_; i++) {
+    max = std::max(output[i], max);
+  }
+  for (int32_t i = 0; i < arity_; i++) {
+    output[i] = exp(output[i] - max);
+    z += output[i];
+  }
+  for (int32_t i = 0; i < arity_; i++) {
+    output[i] /= z;
+  }
+}
+
+// M-ary version of binaryLogistic
+real Model::mAryLogistic(int32_t node, int32_t cid, real lr) {
+  computeMArySoftmax(node, outputM_);
+  // gradient
+  for (int32_t i = 0; i < arity_; i++) {
+    real label = (i == cid) ? 1.0 : 0.0;
+    real alpha = lr * (label - outputM_[i]);
+    grad_.addRow(*wo_, node * arity_ + i, alpha);
+    wo_->addRow(hidden_, node * arity_ + i, alpha);
+  }
+  // loss
+  return -log(outputM_[cid]);
+}
+
+//M-ary version of hierarchicalSoftmax
+real Model::hierarchicalSoftmaxM(int32_t target, real lr) {
+  real loss = 0.0;
+  grad_.zero();
+  const std::vector<int32_t>& mAryCode = codesM[target];
+  const std::vector<int32_t>& pathToRoot = paths[target];
+  for (int32_t i = 0; i < pathToRoot.size(); i++) {
+    loss += mAryLogistic(pathToRoot[i], mAryCode[i], lr);
+  }
+  return loss;
+}
+
+// M-ary version of depth first search
+// TODO: check const status of node.probas
+void Model::dfsM(int32_t k, int32_t node, real score,
+                std::vector<std::pair<real, int32_t>>& heap,
+                Vector& hidden, Vector& outputM) const {
+  if (heap.size() == k && score < heap.front().first) {
+    return;
+  }
+
+  if (treeM[node].children.size() == 0) {
+    heap.push_back(std::make_pair(score, node));
+    std::push_heap(heap.begin(), heap.end(), comparePairs);
+    if (heap.size() > k) {
+      std::pop_heap(heap.begin(), heap.end(), comparePairs);
+      heap.pop_back();
+    }
+    return;
+  }
+
+  // compute scores for all children, then recurse
+  computeMArySoftmax(node - nleaves_, outputM);
+  for (int32_t i = 0; i < arity_; i++) {
+    treeM[node].probas[i] = outputM[i];
+  }
+  for (int32_t i = 0; i < arity_; i++) {
+    dfsM(k, treeM[node].children[i], score + log(treeM[node].probas[i]), heap, hidden, outputM);
+  }
+}
+
+/////////////////////
+// LOMTree code
+/////////////////////
+
+// LOM tree version of buildTree
+// TODO: initialize node statistics
+void Model::buildTreeLOM(const std::vector<int64_t>& counts) {
+  // add 0 weight symbol to have well-formed n-ary tree
+  int32_t rest = osz_ % (arity_ - 1);
+  if (rest == 0){
+    nleaves_ = osz_;
+  } else {
+    nleaves_ = osz_ + arity_ - 1 - rest;
+  }
+  nnodes_ = nleaves_ + (nleaves_ - 1) / (arity_ - 1);
+  // initialize the tree
+  treeM.resize(nnodes_);
+  for (int32_t i = 0; i < nnodes_; i++) {
+    treeM[i].parent = -1;
+    treeM[i].count = 1e15;
+    treeM[i].pindex = -1;
+  }
+  for (int32_t i = 0; i < osz_; i++) {
+    treeM[i].count = counts[i];
+  }
+  for (int32_t i = osz_; i < nleaves_; i++) {
+    treeM[i].count = 0;
+  }
+  // start n-ary huffman coding
+  int32_t leaf = nleaves_ - 1;
+  int32_t node = nleaves_;
+  for (int32_t i = nleaves_; i < nnodes_; i++) {
+    treeM[i].children.resize(arity_);
+    treeM[i].probas = new real[arity_];
+    int32_t ncount = 0;
+    int32_t cid;
+    for (int32_t j = 0; j < arity_; j++) {
+      if (leaf >= 0 && treeM[leaf].count < treeM[node].count) {
+        cid = leaf--;
+      } else {
+        cid = node++;
+      }
+      treeM[i].children[j] = cid;
+      ncount += treeM[cid].count;
+      treeM[cid].parent = i;
+      treeM[cid].pindex = j;
+    }
+  }
+  // build paths and codes
+  for (int32_t i = 0; i < osz_; i++) {
+    std::vector<int32_t> path;
+    std::vector<int32_t> codeM;
+    int32_t j = i;
+    while (treeM[j].parent != -1) {
+      path.push_back(treeM[j].parent - nleaves_);
+      codeM.push_back(treeM[j].pindex);
+      j = treeM[j].parent;
+    }
+    paths.push_back(path);
+    codesM.push_back(codeM);
+  }
+}
+
 
 }

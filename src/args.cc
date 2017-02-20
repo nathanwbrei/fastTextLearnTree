@@ -18,9 +18,10 @@ namespace fasttext {
 
 Args::Args() {
   lr = 0.05;
-  dim = 100;
+  dim = 50;
+  arity = 4;
   ws = 5;
-  epoch = 5;
+  epoch = 10;
   minCount = 5;
   minCountLabel = 0;
   neg = 5;
@@ -31,7 +32,7 @@ Args::Args() {
   minn = 3;
   maxn = 6;
   thread = 12;
-  lrUpdateRate = 100;
+  lrUpdateRate = 100000;
   t = 1e-4;
   label = "__label__";
   verbose = 2;
@@ -73,6 +74,8 @@ void Args::parseArgs(int argc, char** argv) {
       lrUpdateRate = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-dim") == 0) {
       dim = atoi(argv[ai + 1]);
+    } else if (strcmp(argv[ai], "-arity") == 0) {
+      arity = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-ws") == 0) {
       ws = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-epoch") == 0) {
@@ -92,6 +95,8 @@ void Args::parseArgs(int argc, char** argv) {
         loss = loss_name::ns;
       } else if (strcmp(argv[ai + 1], "softmax") == 0) {
         loss = loss_name::softmax;
+      } else if (strcmp(argv[ai + 1], "hsm") == 0) {
+        loss = loss_name::hsm;
       } else {
         std::cout << "Unknown loss: " << argv[ai + 1] << std::endl;
         printHelp();
@@ -143,6 +148,7 @@ void Args::printHelp() {
     << "  -lr                 learning rate [" << lr << "]\n"
     << "  -lrUpdateRate       change the rate of updates for the learning rate [" << lrUpdateRate << "]\n"
     << "  -dim                size of word vectors [" << dim << "]\n"
+    << "  -arity              arity of tree for hsm [" << arity << "]\n"
     << "  -ws                 size of the context window [" << ws << "]\n"
     << "  -epoch              number of epochs [" << epoch << "]\n"
     << "  -minCount           minimal number of word occurences [" << minCount << "]\n"
@@ -163,6 +169,7 @@ void Args::printHelp() {
 
 void Args::save(std::ostream& out) {
   out.write((char*) &(dim), sizeof(int));
+  out.write((char*) &(arity), sizeof(int));
   out.write((char*) &(ws), sizeof(int));
   out.write((char*) &(epoch), sizeof(int));
   out.write((char*) &(minCount), sizeof(int));
@@ -179,6 +186,7 @@ void Args::save(std::ostream& out) {
 
 void Args::load(std::istream& in) {
   in.read((char*) &(dim), sizeof(int));
+  in.read((char*) &(arity), sizeof(int));
   in.read((char*) &(ws), sizeof(int));
   in.read((char*) &(epoch), sizeof(int));
   in.read((char*) &(minCount), sizeof(int));

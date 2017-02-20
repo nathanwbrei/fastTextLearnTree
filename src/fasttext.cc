@@ -81,6 +81,7 @@ void FastText::loadModel(std::istream& in) {
   output_->load(in);
   model_ = std::make_shared<Model>(input_, output_, args_, 0);
   if (args_->model == model_name::sup) {
+    model_->setLabelCount(dict_->nlabels());
     model_->setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
     model_->setTargetCounts(dict_->getCounts(entry_type::word));
@@ -162,6 +163,12 @@ void FastText::test(std::istream& in, int32_t k) {
       nexamples++;
       nlabels += labels.size();
     }
+    if (nexamples % 50000 == 0) {
+      std::cout << std::setprecision(3);
+      std::cout << "P@" << k << ": " << precision / (k * nexamples) << " ";
+      std::cout << "R@" << k << ": " << precision / nlabels << " ";
+      std::cout << "Number of examples: " << nexamples << std::endl;
+    }
   }
   std::cout << std::setprecision(3);
   std::cout << "P@" << k << ": " << precision / (k * nexamples) << std::endl;
@@ -177,8 +184,9 @@ void FastText::predict(std::istream& in, int32_t k,
   if (words.empty()) return;
   Vector hidden(args_->dim);
   Vector output(dict_->nlabels());
+  Vector outputM(args_->arity);
   std::vector<std::pair<real,int32_t>> modelPredictions;
-  model_->predict(words, k, modelPredictions, hidden, output);
+  model_->predict(words, k, modelPredictions, hidden, output, outputM);
   predictions.clear();
   for (auto it = modelPredictions.cbegin(); it != modelPredictions.cend(); it++) {
     predictions.push_back(std::make_pair(it->first, dict_->getLabel(it->second)));
@@ -246,6 +254,7 @@ void FastText::trainThread(int32_t threadId) {
 
   Model model(input_, output_, args_, threadId);
   if (args_->model == model_name::sup) {
+    model.setLabelCount(dict_->nlabels());
     model.setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
     model.setTargetCounts(dict_->getCounts(entry_type::word));
@@ -345,7 +354,14 @@ void FastText::train(std::shared_ptr<Args> args) {
   }
 
   if (args_->model == model_name::sup) {
-    output_ = std::make_shared<Matrix>(dict_->nlabels(), args_->dim);
+    if (args_->loss == loss_name::hsm){
+      int32_t nparams = (dict_->nlabels() / (args_->arity - 1)) * args_->arity;
+      // DEBUG
+      std::cout << dict_->nlabels() << " labels " << nparams << " nparams\n";
+      output_ = std::make_shared<Matrix>(nparams, args_->dim);
+    } else {
+      output_ = std::make_shared<Matrix>(dict_->nlabels(), args_->dim);
+    }
   } else {
     output_ = std::make_shared<Matrix>(dict_->nwords(), args_->dim);
   }
@@ -361,6 +377,9 @@ void FastText::train(std::shared_ptr<Args> args) {
     it->join();
   }
   model_ = std::make_shared<Model>(input_, output_, args_, 0);
+  if (args_->model == model_name::sup) {
+    model_->setLabelCount(dict_->nlabels());
+  }
 
   saveModel();
   if (args_->model != model_name::sup) {

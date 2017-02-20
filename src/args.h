@@ -17,7 +17,7 @@
 namespace fasttext {
 
 enum class model_name : int {cbow=1, sg, sup};
-enum class loss_name : int {hs=1, ns, softmax};
+enum class loss_name : int {hs=1, ns, softmax, hsm};
 
 class Args {
   public:
@@ -28,6 +28,7 @@ class Args {
     double lr;
     int lrUpdateRate;
     int dim;
+    int arity;
     int ws;
     int epoch;
     int minCount;
