@@ -21,7 +21,7 @@ struct AuxTriple {
 
     AuxTriple(int32_t n1, int32_t n2, real x) : i(n1), j(n2), v(x) {}
 
-    bool operator<(const struct S& other) const
+    bool operator<(const struct AuxTriple& other) const
     {
         return v < other.v;
     }
