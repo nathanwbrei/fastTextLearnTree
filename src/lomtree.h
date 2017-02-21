@@ -5,7 +5,7 @@
 #include <utility>
 #include <memory>
 #include <boost/unordered_map.hpp>
-
+#include <queue>
 
 //~ #include "args.h"
 //~ #include "matrix.h"
@@ -14,6 +14,18 @@
 
 namespace fasttext {
 
+struct AuxTriple {
+    int32_t i;
+    int32_t j;
+    real    v;
+
+    AuxTriple(int32_t n1, int32_t n2, real x) : i(n1), j(n2), v(x) {}
+
+    bool operator<(const struct S& other) const
+    {
+        return v < other.v;
+    }
+};
 
 struct NodeLOM {
   int32_t parent;
@@ -24,6 +36,8 @@ struct NodeLOM {
   std::vector<real> q;
   std::vector<real> p;
   std::vector<std::vector<real>> p_cond;
+  std::vector<std::vector<real>> grad_j;
+  std::priority_queue<AuxTriple> sort_queue;
 };
 
 

@@ -14,6 +14,7 @@
 #include <random>
 #include <utility>
 #include <memory>
+#include <unordered_map>
 
 #include "args.h"
 #include "matrix.h"
@@ -34,7 +35,6 @@ struct Node {
   bool binary;
 };
 
-
 // node for M-ary tree
 struct NodeM {
   int32_t parent;
@@ -42,7 +42,6 @@ struct NodeM {
   int64_t count;
   int32_t pindex;
   real * probas;
-  // LOM tree
 };
 
 
@@ -66,18 +65,18 @@ class Model {
     size_t negpos;
     // used for hierarchical softmax:
     std::vector< std::vector<int32_t> > paths;
-    // binary version
-    std::vector< std::vector<bool> > codes;
-    std::vector<Node> tree;
 
     static bool comparePairs(const std::pair<real, int32_t>&,
                              const std::pair<real, int32_t>&);
-
     int32_t getNegative(int32_t target);
     void initSigmoid();
     void initLog();
 
     static const int32_t NEGATIVE_TABLE_SIZE = 10000000;
+
+    // binary version
+    std::vector< std::vector<bool> > codes;
+    std::vector<Node> tree;
 
     // M-ary version
     Vector outputM_;

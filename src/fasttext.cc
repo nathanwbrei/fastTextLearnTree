@@ -18,6 +18,7 @@
 #include <vector>
 #include <algorithm>
 
+
 namespace fasttext {
 
 void FastText::getVector(Vector& vec, const std::string& word) {

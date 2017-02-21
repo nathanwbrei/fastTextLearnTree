@@ -23,8 +23,14 @@ LOMtree::~LOMtree() {
 }
 
 
+// TODO: max node capacity / recycle unused nodes
 void LOMtree::updateNode(int32_t node) {
   int32_t ndesc = node_labels[node].size();
+  // resize stats
+  treeLOM[node].q.resize(ndesc);
+  treeLOM[node].p_cond.resize(ndesc);
+  treeLOM[node].grad_j.resize(ndesc);
+  //
   if (ndesc == 0) return;
   std::pair<int32_t, int32_t> key;
   // q_i : proportion of label i = acc_counts[(node, i)] / sum_{i' \in node_labels[node]} acc_counts[(node, i)]
@@ -41,6 +47,7 @@ void LOMtree::updateNode(int32_t node) {
   // p_j : proportion of child j
   real p_sum = 0;
   for (int32_t i = 0; i < ndesc; i++){
+    treeLOM[node].p_cond[i].resize(arity_);
     for (int32_t j = 0; j < arity_; j++) {
       key = std::make_pair(node, node_labels[node][i]);
       treeLOM[node].p_cond[i][j] = acc_probas[key][j] / acc_counts[key];
@@ -53,7 +60,19 @@ void LOMtree::updateNode(int32_t node) {
   }
   // sort by:
   // q_i * (1 - q_i) * sign(p_ji - pi) /?/ * p_ji
-  
+  for (int32_t i = 0; i < ndesc; i++){
+    treeLOM[node].grad_j[i].resize(arity_);
+    for (int32_t j = 0; j < arity_; j++) {
+      treeLOM[node].grad_j[i][j] = treeLOM[node].q[i] * (1 - treeLOM[node].q[i]);
+      treeLOM[node].grad_j[i][j] *= ((treeLOM[node].p_cond[i][j] > treeLOM[node].p[j]) ? 1.0 : -1.0);
+      treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
+      //
+      treeLOM[node].sort_queue.push(AuxTriple(i, j, treeLOM[node].grad_j[i][j]));
+    }
+  }
+  // assign to children
+  while (not treeLOM[node].sort_queue.empty()){
+  }
   // recurse
   for (int32_t i = 0; i < arity_; i++) {
     updateNode(treeLOM[node].children[i]);
