@@ -21,8 +21,7 @@ struct AuxTriple {
 
     AuxTriple(int32_t n1, int32_t n2, real x) : i(n1), j(n2), v(x) {}
 
-    bool operator<(const struct AuxTriple& other) const
-    {
+    bool operator<(const struct AuxTriple& other) const {
         return v < other.v;
     }
 };
@@ -35,6 +34,7 @@ struct NodeLOM {
   real * probas;
   std::vector<real> q;
   std::vector<real> p;
+  std::vector<bool> assigned;
   std::vector<std::vector<real>> p_cond;
   std::vector<std::vector<real>> grad_j;
   std::priority_queue<AuxTriple> sort_queue;

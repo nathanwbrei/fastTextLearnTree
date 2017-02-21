@@ -30,6 +30,8 @@ void LOMtree::updateNode(int32_t node) {
   treeLOM[node].q.resize(ndesc);
   treeLOM[node].p_cond.resize(ndesc);
   treeLOM[node].grad_j.resize(ndesc);
+  treeLOM[node].assigned.resize(0);
+  treeLOM[node].assigned.resize(ndesc, false);
   //
   if (ndesc == 0) return;
   std::pair<int32_t, int32_t> key;
@@ -71,7 +73,14 @@ void LOMtree::updateNode(int32_t node) {
     }
   }
   // assign to children
+  // TODO: empty children label_list / copy ???
+  // TODO: stop at capacity
   while (not treeLOM[node].sort_queue.empty()){
+    auto triple = treeLOM[node].sort_queue.pop();
+    if (not treeLOM[node].assigned[triple.i]) {
+      node_labels[treeLOM[node].children[triple.j]].insert(node_labels[treeLOM[node].children[triple.j]].end, triple.i);
+      treeLOM[node].assigned[triple.i] = true;
+    }
   }
   // recurse
   for (int32_t i = 0; i < arity_; i++) {
