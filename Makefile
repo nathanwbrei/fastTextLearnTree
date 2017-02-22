@@ -10,6 +10,7 @@
 CXX = c++
 CXXFLAGS = -pthread -std=c++0x
 OBJS = args.o dictionary.o matrix.o vector.o lomtree.o model.o utils.o fasttext.o
+# INCLUDES = -I /share/apps/boost/1.62.0/gnu/include/
 INCLUDES = -I.
 
 opt: CXXFLAGS += -O3 -funroll-loops

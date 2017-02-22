@@ -204,7 +204,7 @@ void LOMtree::computeNodeStats(int32_t node) {
       treeLOM[node].grad_j[i][j] = treeLOM[node].q[i] * (1 - treeLOM[node].q[i]);
       treeLOM[node].grad_j[i][j] *= ((treeLOM[node].p_cond[i][j] > treeLOM[node].p[j]) ? 1.0 : -1.0);
       // TODO: decide
-      //~ treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
+      treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
       // pre-sort (label, child) pairs
       treeLOM[node].sort_queue.push(AuxTriple(i, j, treeLOM[node].grad_j[i][j]));
     }
