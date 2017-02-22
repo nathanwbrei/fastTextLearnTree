@@ -19,6 +19,7 @@
 #include "args.h"
 #include "matrix.h"
 #include "vector.h"
+#include "lomtree.h"
 #include "real.h"
 
 #define SIGMOID_TABLE_SIZE 512
@@ -26,6 +27,8 @@
 #define LOG_TABLE_SIZE 512
 
 namespace fasttext {
+
+//~ class LOMtree;
 
 struct Node {
   int32_t parent;
@@ -85,6 +88,9 @@ class Model {
     int32_t nnodes_;
     std::vector< std::vector<int32_t> > codesM;
     std::vector<NodeM> treeM;
+    
+    // LOMtree version
+    std::shared_ptr<LOMtree> lomtree_;
 
   public:
     Model(std::shared_ptr<Matrix>, std::shared_ptr<Matrix>,
@@ -127,14 +133,15 @@ class Model {
     void setLabelCount(int32_t);
     void buildTreeM(const std::vector<int64_t>&);
     void computeMArySoftmax(int32_t, Vector&) const;
-    real mAryLogistic(int32_t, int32_t, real);
-    real hierarchicalSoftmaxM(int32_t, real);
+    real mAryLogistic(int32_t, int32_t, real, bool, int32_t);
+    real hierarchicalSoftmaxM(int32_t, real, bool);
     void dfsM(int32_t, int32_t, real,
               std::vector<std::pair<real, int32_t>>&,
               Vector&, Vector&) const;
 
-    // LOM tree version
-    void buildTreeLOM(const std::vector<int64_t>&);
+    // LOM tree version (build from LOMTree object)
+    void setTreeLOM(std::shared_ptr<LOMtree>);
+    void updateTreeLOM();
 };
 
 }

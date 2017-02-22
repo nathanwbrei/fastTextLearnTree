@@ -30,7 +30,7 @@ matrix.o: src/matrix.cc src/matrix.h src/utils.h
 vector.o: src/vector.cc src/vector.h src/utils.h
 	$(CXX) $(CXXFLAGS) -c src/vector.cc
 
-lomtree.o: src/lomtree.cc src/lomtree.h src/args.h
+lomtree.o: src/lomtree.cc src/lomtree.h
 	$(CXX) $(CXXFLAGS) -c src/lomtree.cc
 
 model.o: src/model.cc src/model.h src/args.h

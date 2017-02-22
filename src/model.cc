@@ -195,7 +195,9 @@ void Model::update(const std::vector<int32_t>& input, int32_t target, real lr) {
   } else if (args_->loss == loss_name::hs) {
     loss_ += hierarchicalSoftmax(target, lr);
   } else if (args_->loss == loss_name::hsm) {
-    loss_ += hierarchicalSoftmaxM(target, lr);
+    loss_ += hierarchicalSoftmaxM(target, lr, false);
+  } else if (args_->loss == loss_name::lom) {
+    loss_ += hierarchicalSoftmaxM(target, lr, true);
   } else {
     loss_ += softmax(target, lr);
   }
@@ -219,6 +221,9 @@ void Model::setTargetCounts(const std::vector<int64_t>& counts) {
   }
   if (args_->loss == loss_name::hsm) {
     buildTreeM(counts);
+  }
+  if (args_->loss == loss_name::lom) {
+    updateTreeLOM();
   }
 }
 
@@ -340,12 +345,7 @@ void Model::setLabelCount(int32_t nlabels) {
 // M-ary version of buildTree
 void Model::buildTreeM(const std::vector<int64_t>& counts) {
   // add 0 weight symbol to have well-formed n-ary tree
-  int32_t rest = osz_ % (arity_ - 1);
-  if (rest == 0){
-    nleaves_ = osz_;
-  } else {
-    nleaves_ = osz_ + arity_ - 1 - rest;
-  }
+  nleaves_ = (osz_ / (arity_ - 1) + 1) * (arity_ - 1) + 1;
   nnodes_ = nleaves_ + (nleaves_ - 1) / (arity_ - 1);
   // initialize the tree
   treeM.resize(nnodes_);
@@ -379,6 +379,7 @@ void Model::buildTreeM(const std::vector<int64_t>& counts) {
       treeM[cid].parent = i;
       treeM[cid].pindex = j;
     }
+    treeM[i].count = ncount;
   }
   // build paths and codes
   for (int32_t i = 0; i < osz_; i++) {
@@ -418,7 +419,7 @@ void Model::computeMArySoftmax(int32_t node, Vector& output) const {
 }
 
 // M-ary version of binaryLogistic
-real Model::mAryLogistic(int32_t node, int32_t cid, real lr) {
+real Model::mAryLogistic(int32_t node, int32_t cid, real lr, bool is_lom, int32_t label) {
   computeMArySoftmax(node, outputM_);
   // gradient
   for (int32_t i = 0; i < arity_; i++) {
@@ -427,18 +428,20 @@ real Model::mAryLogistic(int32_t node, int32_t cid, real lr) {
     grad_.addRow(*wo_, node * arity_ + i, alpha);
     wo_->addRow(hidden_, node * arity_ + i, alpha);
   }
+  // LOMtree
+  if (is_lom) { lomtree_->updateStats(node + nleaves_, label, outputM_); }
   // loss
   return -log(outputM_[cid]);
 }
 
 //M-ary version of hierarchicalSoftmax
-real Model::hierarchicalSoftmaxM(int32_t target, real lr) {
+real Model::hierarchicalSoftmaxM(int32_t target, real lr, bool is_lom) {
   real loss = 0.0;
   grad_.zero();
   const std::vector<int32_t>& mAryCode = codesM[target];
   const std::vector<int32_t>& pathToRoot = paths[target];
   for (int32_t i = 0; i < pathToRoot.size(); i++) {
-    loss += mAryLogistic(pathToRoot[i], mAryCode[i], lr);
+    loss += mAryLogistic(pathToRoot[i], mAryCode[i], lr, is_lom, target);
   }
   return loss;
 }
@@ -476,51 +479,31 @@ void Model::dfsM(int32_t k, int32_t node, real score,
 // LOMTree code
 /////////////////////
 
-// LOM tree version of buildTree
-// TODO: initialize node statistics
-void Model::buildTreeLOM(const std::vector<int64_t>& counts) {
-  // add 0 weight symbol to have well-formed n-ary tree
-  int32_t rest = osz_ % (arity_ - 1);
-  if (rest == 0){
-    nleaves_ = osz_;
-  } else {
-    nleaves_ = osz_ + arity_ - 1 - rest;
-  }
-  nnodes_ = nleaves_ + (nleaves_ - 1) / (arity_ - 1);
-  // initialize the tree
+// copy tree structure from LOMtree object
+void Model::setTreeLOM(const std::shared_ptr<LOMtree> lomtree) {
+  lomtree_  = lomtree;
+  nleaves_  = lomtree_->getNLeaves();
+  nnodes_   = lomtree_->getNNodes();
   treeM.resize(nnodes_);
-  for (int32_t i = 0; i < nnodes_; i++) {
-    treeM[i].parent = -1;
-    treeM[i].count = 1e15;
-    treeM[i].pindex = -1;
+}
+
+void Model::updateTreeLOM() {
+  //~ lomtree_->updateTree();
+  
+  for (int32_t node = 0; node < nnodes_; node++) {
+    auto node_lm = lomtree_->getNode(node);
+    treeM[node].parent = node_lm.parent;
+    treeM[node].children.resize(0);
+    treeM[node].children.insert(treeM[node].children.end(),
+                                node_lm.children.begin(),
+                                node_lm.children.end());
+    treeM[node].count   = node_lm.count;
+    treeM[node].pindex  = node_lm.pindex;
   }
-  for (int32_t i = 0; i < osz_; i++) {
-    treeM[i].count = counts[i];
-  }
-  for (int32_t i = osz_; i < nleaves_; i++) {
-    treeM[i].count = 0;
-  }
-  // start n-ary huffman coding
-  int32_t leaf = nleaves_ - 1;
-  int32_t node = nleaves_;
-  for (int32_t i = nleaves_; i < nnodes_; i++) {
-    treeM[i].children.resize(arity_);
-    treeM[i].probas = new real[arity_];
-    int32_t ncount = 0;
-    int32_t cid;
-    for (int32_t j = 0; j < arity_; j++) {
-      if (leaf >= 0 && treeM[leaf].count < treeM[node].count) {
-        cid = leaf--;
-      } else {
-        cid = node++;
-      }
-      treeM[i].children[j] = cid;
-      ncount += treeM[cid].count;
-      treeM[cid].parent = i;
-      treeM[cid].pindex = j;
-    }
-  }
+  
   // build paths and codes
+  paths.resize(0);
+  codesM.resize(0);
   for (int32_t i = 0; i < osz_; i++) {
     std::vector<int32_t> path;
     std::vector<int32_t> codeM;
@@ -533,7 +516,11 @@ void Model::buildTreeLOM(const std::vector<int64_t>& counts) {
     paths.push_back(path);
     codesM.push_back(codeM);
   }
+  
+  //~ printf("COPYING %d %d\n", treeM[1105].parent - nleaves_, lomtree_->getNode(1105).parent - nleaves_);
+  //~ printf("COPY node %d : (%d, %d) - (%d, %d) \n",
+        //~ 1105, paths[1105][paths[1105].size() - 1], codesM[1105][paths[1105].size() - 1],
+        //~ paths[1105][0], codesM[1105][0]);
 }
-
 
 }

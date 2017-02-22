@@ -17,7 +17,7 @@
 namespace fasttext {
 
 enum class model_name : int {cbow=1, sg, sup};
-enum class loss_name : int {hs=1, ns, softmax, hsm};
+enum class loss_name : int {hs=1, ns, softmax, hsm, lom};
 
 class Args {
   public:
@@ -28,7 +28,6 @@ class Args {
     double lr;
     int lrUpdateRate;
     int dim;
-    int arity;
     int ws;
     int epoch;
     int minCount;
@@ -45,6 +44,8 @@ class Args {
     std::string label;
     int verbose;
     std::string pretrainedVectors;
+    int arity;
+    int lomUpdates;
 
     void parseArgs(int, char**);
     void printHelp();

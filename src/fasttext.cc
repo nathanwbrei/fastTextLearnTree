@@ -13,7 +13,6 @@
 
 #include <iostream>
 #include <iomanip>
-#include <thread>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -256,6 +255,7 @@ void FastText::trainThread(int32_t threadId) {
   Model model(input_, output_, args_, threadId);
   if (args_->model == model_name::sup) {
     model.setLabelCount(dict_->nlabels());
+    if (args_->loss == loss_name::lom) { model.setTreeLOM(lomtree_); }
     model.setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
     model.setTargetCounts(dict_->getCounts(entry_type::word));
@@ -263,6 +263,7 @@ void FastText::trainThread(int32_t threadId) {
 
   const int64_t ntokens = dict_->ntokens();
   int64_t localTokenCount = 0;
+  int64_t nsamples = args_->epoch * ntokens;
   std::vector<int32_t> line, labels;
   while (tokenCount < args_->epoch * ntokens) {
     real progress = real(tokenCount) / (args_->epoch * ntokens);
@@ -281,6 +282,31 @@ void FastText::trainThread(int32_t threadId) {
       localTokenCount = 0;
       if (threadId == 0 && args_->verbose > 1) {
         printInfo(progress, model.getLoss());
+      }
+      // LOMtree
+      if (args_->loss == loss_name::lom) {
+        if (tokenCount >= nextLOMupdate) {
+          if (threadId == 0) {
+            // update lomtree structure
+            printf("rebuilding tree\n");
+            lomtree_->updateTree();
+            // update model tree
+            //~ model.setTreeLOM(lomtree_);
+            model.updateTreeLOM();
+            // update nextLOMupdate
+            nextLOMupdate += (nextLOMupdate < (nsamples / 2)) ? periodLOMupdate : nsamples;
+            // send signal
+            cv.notify_all();
+          } else {
+            // LOM tree
+            std::unique_lock<std::mutex> lck(mtx);
+            // wait for signal
+            cv.wait(lck);
+            // update model tree
+            //~ model.setTreeLOM(lomtree_);
+            model.updateTreeLOM();
+          }
+        }
       }
     }
   }
@@ -354,10 +380,18 @@ void FastText::train(std::shared_ptr<Args> args) {
     input_->uniform(1.0 / args_->dim);
   }
 
+  // LOMtree
+  if (args_->loss == loss_name::lom){
+    periodLOMupdate = args_->epoch * dict_->ntokens() / 2 / args_->lomUpdates;
+    nextLOMupdate = periodLOMupdate;
+    lomtree_ = std::make_shared<LOMtree>();
+    lomtree_->buildLOMTree(dict_->getCounts(entry_type::label), args_->arity);
+  }
+
   if (args_->model == model_name::sup) {
-    if (args_->loss == loss_name::hsm){
-      int32_t nparams = (dict_->nlabels() / (args_->arity - 1)) * args_->arity;
-      // DEBUG
+    // LOMtree
+    if (args_->loss == loss_name::hsm or args_->loss == loss_name::lom){
+      int32_t nparams = (dict_->nlabels() / (args_->arity - 1) + 1) * args_->arity;
       std::cout << dict_->nlabels() << " labels " << nparams << " nparams\n";
       output_ = std::make_shared<Matrix>(nparams, args_->dim);
     } else {
@@ -368,6 +402,7 @@ void FastText::train(std::shared_ptr<Args> args) {
   }
   output_->zero();
 
+  // multi-threaded training
   start = clock();
   tokenCount = 0;
   std::vector<std::thread> threads;
@@ -377,6 +412,8 @@ void FastText::train(std::shared_ptr<Args> args) {
   for (auto it = threads.begin(); it != threads.end(); ++it) {
     it->join();
   }
+  
+  // save
   model_ = std::make_shared<Model>(input_, output_, args_, 0);
   if (args_->model == model_name::sup) {
     model_->setLabelCount(dict_->nlabels());
@@ -386,6 +423,7 @@ void FastText::train(std::shared_ptr<Args> args) {
   if (args_->model != model_name::sup) {
     saveVectors();
   }
+  
 }
 
 }

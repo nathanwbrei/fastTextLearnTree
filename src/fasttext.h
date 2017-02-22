@@ -15,9 +15,14 @@
 #include <atomic>
 #include <memory>
 
+#include <thread>             // std::thread
+#include <mutex>              // std::mutex, std::unique_lock
+#include <condition_variable> // std::condition_variable
+
 #include "matrix.h"
 #include "vector.h"
 #include "dictionary.h"
+#include "lomtree.h"
 #include "model.h"
 #include "utils.h"
 #include "real.h"
@@ -34,6 +39,12 @@ class FastText {
     std::shared_ptr<Model> model_;
     std::atomic<int64_t> tokenCount;
     clock_t start;
+    // LOM tree
+    std::shared_ptr<LOMtree> lomtree_;
+    int64_t periodLOMupdate;
+    int64_t nextLOMupdate;
+    std::mutex mtx;
+    std::condition_variable cv;
 
   public:
     void getVector(Vector&, const std::string&);

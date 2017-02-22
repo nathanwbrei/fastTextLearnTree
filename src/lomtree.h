@@ -1,5 +1,5 @@
-#ifndef FASTTEXT_MODEL_H
-#define FASTTEXT_MODEL_H
+#ifndef FASTTEXT_LOMTREE_H
+#define FASTTEXT_LOMTREE_H
 
 #include <vector>
 #include <utility>
@@ -7,24 +7,30 @@
 #include <boost/unordered_map.hpp>
 #include <queue>
 
-//~ #include "args.h"
-//~ #include "matrix.h"
+#include <assert.h> 
+
 #include "vector.h"
 #include "real.h"
 
 namespace fasttext {
 
+
+struct AuxPair {
+    int32_t n;
+    real    v;
+    AuxPair(int32_t a, real x) : n(a), v(x) {}
+    bool operator<(const struct AuxPair& other) const { return v < other.v; }
+};
+
+
 struct AuxTriple {
     int32_t i;
     int32_t j;
     real    v;
-
     AuxTriple(int32_t n1, int32_t n2, real x) : i(n1), j(n2), v(x) {}
-
-    bool operator<(const struct AuxTriple& other) const {
-        return v < other.v;
-    }
+    bool operator<(const struct AuxTriple& other) const { return v < other.v; }
 };
+
 
 struct NodeLOM {
   int32_t parent;
@@ -32,12 +38,16 @@ struct NodeLOM {
   int64_t count;
   int32_t pindex;
   real * probas;
+  // Node stats
   std::vector<real> q;
   std::vector<real> p;
-  std::vector<bool> assigned;
   std::vector<std::vector<real>> p_cond;
   std::vector<std::vector<real>> grad_j;
+  // Auxiliary variables
+  std::vector<bool> assigned;
+  std::priority_queue<AuxPair> children_queue;
   std::priority_queue<AuxTriple> sort_queue;
+  std::vector<std::vector<int32_t>> children_labels;
 };
 
 
@@ -59,15 +69,26 @@ class LOMtree {
     // top-down tree paths
     std::vector< std::vector<int32_t> > paths;
     std::vector< std::vector<int32_t> > codesLOM;
+    // AUXILIARY VARIABLES
+    std::vector<int32_t> freeNodeIds;
 
   public:
     LOMtree();
     ~LOMtree();
   
-    void buildLOMTree(const std::vector<int64_t>&, int32_t, int32_t);
+    void updateStats(int32_t, int32_t, Vector&);
+    void updatePaths();
+    void initNodeStats(int32_t);
+    void buildLOMTree(const std::vector<int64_t>&, int32_t);
+    
+    void computeNodeStats(int32_t);
+    void assignNodeChildren(int32_t);
     void updateNode(int32_t);
     void updateTree();
-    void updateStats(int32_t, int32_t, real*);
+    
+    int32_t getNLeaves();
+    int32_t getNNodes();
+    NodeLOM getNode(int32_t);
 };
 
 }

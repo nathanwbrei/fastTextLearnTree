@@ -19,7 +19,6 @@ namespace fasttext {
 Args::Args() {
   lr = 0.05;
   dim = 50;
-  arity = 4;
   ws = 5;
   epoch = 10;
   minCount = 5;
@@ -37,6 +36,9 @@ Args::Args() {
   label = "__label__";
   verbose = 2;
   pretrainedVectors = "";
+  // LOM tree
+  arity = 4;
+  lomUpdates= 10;
 }
 
 void Args::parseArgs(int argc, char** argv) {
@@ -74,8 +76,6 @@ void Args::parseArgs(int argc, char** argv) {
       lrUpdateRate = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-dim") == 0) {
       dim = atoi(argv[ai + 1]);
-    } else if (strcmp(argv[ai], "-arity") == 0) {
-      arity = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-ws") == 0) {
       ws = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-epoch") == 0) {
@@ -97,6 +97,8 @@ void Args::parseArgs(int argc, char** argv) {
         loss = loss_name::softmax;
       } else if (strcmp(argv[ai + 1], "hsm") == 0) {
         loss = loss_name::hsm;
+      } else if (strcmp(argv[ai + 1], "lom") == 0) {
+        loss = loss_name::lom;
       } else {
         std::cout << "Unknown loss: " << argv[ai + 1] << std::endl;
         printHelp();
@@ -118,6 +120,10 @@ void Args::parseArgs(int argc, char** argv) {
       verbose = atoi(argv[ai + 1]);
     } else if (strcmp(argv[ai], "-pretrainedVectors") == 0) {
       pretrainedVectors = std::string(argv[ai + 1]);
+    } else if (strcmp(argv[ai], "-arity") == 0) {
+      arity = atoi(argv[ai + 1]);
+    } else if (strcmp(argv[ai], "-lomUpdates") == 0) {
+      lomUpdates = atoi(argv[ai + 1]);
     } else {
       std::cout << "Unknown argument: " << argv[ai] << std::endl;
       printHelp();
@@ -148,7 +154,7 @@ void Args::printHelp() {
     << "  -lr                 learning rate [" << lr << "]\n"
     << "  -lrUpdateRate       change the rate of updates for the learning rate [" << lrUpdateRate << "]\n"
     << "  -dim                size of word vectors [" << dim << "]\n"
-    << "  -arity              arity of tree for hsm [" << arity << "]\n"
+    << "  -arity              arity of tree for hsm and lom [" << arity << "]\n"
     << "  -ws                 size of the context window [" << ws << "]\n"
     << "  -epoch              number of epochs [" << epoch << "]\n"
     << "  -minCount           minimal number of word occurences [" << minCount << "]\n"
