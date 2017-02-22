@@ -318,7 +318,7 @@ real Model::log(real x) const {
   if (x > 1.0) {
     return 0.0;
   }
-  int i = int(x * LOG_TABLE_SIZE);
+  int i = (x > 0.) ? int(x * LOG_TABLE_SIZE) : 0;
   return t_log[i];
 }
 
@@ -401,6 +401,7 @@ void Model::computeMArySoftmax(int32_t node, Vector& output) const {
   // softmax score
   // the row corresponding to the ith child of node node is
   // the (node * arity_ + i)th row of wo_
+  //~ printf("node %d softmax in \n", node);
   for (int32_t i = 0; i < arity_; i++) {
     output[i] = wo_->dotRow(hidden_, node * arity_ + i);
   }
@@ -416,20 +417,24 @@ void Model::computeMArySoftmax(int32_t node, Vector& output) const {
   for (int32_t i = 0; i < arity_; i++) {
     output[i] /= z;
   }
+  //~ printf("node %d softmax out \n", node);
 }
 
 // M-ary version of binaryLogistic
-real Model::mAryLogistic(int32_t node, int32_t cid, real lr, bool is_lom, int32_t label) {
+real Model::mAryLogistic(int32_t node, int32_t cid, real lr, bool is_lom, int32_t t_label) {
   computeMArySoftmax(node, outputM_);
   // gradient
+  //~ printf("node %d cid %d label %d lr %f \n", node, cid, lr, t_label);
   for (int32_t i = 0; i < arity_; i++) {
     real label = (i == cid) ? 1.0 : 0.0;
     real alpha = lr * (label - outputM_[i]);
+    //~ real mul = (i == cid) ? 1.0 : -1.0; // loss (no log)
+    //~ real alpha = lr * mul * outputM_[i]; // loss (no log)
     grad_.addRow(*wo_, node * arity_ + i, alpha);
     wo_->addRow(hidden_, node * arity_ + i, alpha);
   }
   // LOMtree
-  if (is_lom) { lomtree_->updateStats(node + nleaves_, label, outputM_); }
+  if (is_lom) { lomtree_->updateStats(node + nleaves_, t_label, outputM_); }
   // loss
   return -log(outputM_[cid]);
 }
@@ -444,6 +449,7 @@ real Model::hierarchicalSoftmaxM(int32_t target, real lr, bool is_lom) {
     loss += mAryLogistic(pathToRoot[i], mAryCode[i], lr, is_lom, target);
   }
   return loss;
+  //~ return exp(-loss);
 }
 
 // M-ary version of depth first search

@@ -25,10 +25,12 @@ LOMtree::~LOMtree() {
 
 // update node stats during forwards pass
 void LOMtree::updateStats(int32_t node, int32_t label, Vector& probas) {
+  //~ printf("updating %d %d\n", node, label);
   std::pair<int32_t, int32_t> key(node, label);
   assert(acc_probas.count(key));
   acc_counts[key] += 1.;
   for (int32_t i = 0; i < arity_; i++) acc_probas[key][i] += probas[i];
+  //~ printf("updated %d %d\n", node, label);
 }
 
 
@@ -80,7 +82,8 @@ void LOMtree::initNodeStats(int32_t node) {
     if (not acc_probas.count(key)) {
       acc_counts[key] = 1.;
       acc_probas[key] = new real[arity_];
-      for (int32_t k = 0; k < arity_; k++) acc_probas[key][k] = 1. / arity_;
+      for (int32_t k = 0; k < arity_; k++) acc_probas[key][k] = 0.5 / (arity_);
+      acc_probas[key][j % arity_] += 0.5;
     }
   }
 }
@@ -94,6 +97,10 @@ void LOMtree::buildLOMTree(const std::vector<int64_t>& counts,
   nlabels_ = counts.size();
   nleaves_ = (nlabels_ / (arity_ - 1) + 1) * (arity_ - 1) + 1;
   nnodes_  = nleaves_ + ((nleaves_ - 1) / (arity_ - 1));
+  // random tree
+  std::vector<int32_t> shuffle_vec;
+  for (int32_t i = 0; i < nleaves_; i++) shuffle_vec.push_back(i);
+  std::random_shuffle(shuffle_vec.begin(), shuffle_vec.end());
   std::bernoulli_distribution bern(1. - 1./(5 * arity_));
   // initialize the tree
   treeLOM.resize(nnodes_);
@@ -124,6 +131,7 @@ void LOMtree::buildLOMTree(const std::vector<int64_t>& counts,
       //~ if (leaf >= 0 && (node >= i or bern(generator))) { //TODO: random-ish tree
       if (leaf >= 0 && treeLOM[leaf].count < treeLOM[node].count) { //TODO: huffman option
         cid = leaf--;
+        //~ cid = shuffle_vec[leaf--];
       } else {
         cid = node++;
       }
@@ -145,6 +153,7 @@ void LOMtree::buildLOMTree(const std::vector<int64_t>& counts,
     initNodeStats(i);
   }
   // build paths
+  printf("building paths");
   updatePaths();
 }
 
@@ -195,7 +204,7 @@ void LOMtree::computeNodeStats(int32_t node) {
       treeLOM[node].grad_j[i][j] = treeLOM[node].q[i] * (1 - treeLOM[node].q[i]);
       treeLOM[node].grad_j[i][j] *= ((treeLOM[node].p_cond[i][j] > treeLOM[node].p[j]) ? 1.0 : -1.0);
       // TODO: decide
-      treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
+      //~ treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
       // pre-sort (label, child) pairs
       treeLOM[node].sort_queue.push(AuxTriple(i, j, treeLOM[node].grad_j[i][j]));
     }

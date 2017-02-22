@@ -65,6 +65,7 @@ void FastText::saveModel() {
     printf("Saved tree \n");
   }
   ofs.close();
+  printf("Finished saving \n");
 }
 
 void FastText::loadModel(const std::string& filename) {
@@ -284,6 +285,11 @@ void FastText::trainThread(int32_t threadId) {
   while (tokenCount < args_->epoch * ntokens) {
     real progress = real(tokenCount) / (args_->epoch * ntokens);
     real lr = args_->lr * (1.0 - progress);
+    // LOMtree
+    if (args_->loss == loss_name::lom) {
+      lr *= 2;
+      lr = (lr > args_->lr) ? args_->lr : lr;
+    }
     localTokenCount += dict_->getLine(ifs, line, labels, model.rng);
     if (args_->model == model_name::sup) {
       dict_->addNgrams(line, args_->wordNgrams);
@@ -310,7 +316,7 @@ void FastText::trainThread(int32_t threadId) {
             //~ model.setTreeLOM(lomtree_);
             model.updateTreeLOM();
             // update nextLOMupdate
-            nextLOMupdate += (nextLOMupdate < (nsamples / 2)) ? periodLOMupdate : nsamples;
+            nextLOMupdate += (nextLOMupdate + 1 < (nsamples / 2)) ? periodLOMupdate : nsamples;
             // send signal
             cv.notify_all();
           } else {

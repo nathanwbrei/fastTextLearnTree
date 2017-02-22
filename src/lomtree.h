@@ -7,6 +7,7 @@
 #include <boost/unordered_map.hpp>
 #include <queue>
 
+#include <cstdlib>
 #include <random>
 
 #include <istream>
