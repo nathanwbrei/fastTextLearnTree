@@ -175,7 +175,6 @@ void Args::printHelp() {
 
 void Args::save(std::ostream& out) {
   out.write((char*) &(dim), sizeof(int));
-  out.write((char*) &(arity), sizeof(int));
   out.write((char*) &(ws), sizeof(int));
   out.write((char*) &(epoch), sizeof(int));
   out.write((char*) &(minCount), sizeof(int));
@@ -188,11 +187,13 @@ void Args::save(std::ostream& out) {
   out.write((char*) &(maxn), sizeof(int));
   out.write((char*) &(lrUpdateRate), sizeof(int));
   out.write((char*) &(t), sizeof(double));
+  //LOM tree
+  out.write((char*) &(arity), sizeof(int));
+  out.write((char*) &(lomUpdates), sizeof(int));
 }
 
 void Args::load(std::istream& in) {
   in.read((char*) &(dim), sizeof(int));
-  in.read((char*) &(arity), sizeof(int));
   in.read((char*) &(ws), sizeof(int));
   in.read((char*) &(epoch), sizeof(int));
   in.read((char*) &(minCount), sizeof(int));
@@ -205,6 +206,9 @@ void Args::load(std::istream& in) {
   in.read((char*) &(maxn), sizeof(int));
   in.read((char*) &(lrUpdateRate), sizeof(int));
   in.read((char*) &(t), sizeof(double));
+  //LOM tree
+  in.read((char*) &(arity), sizeof(int));
+  in.read((char*) &(lomUpdates), sizeof(int));
 }
 
 }

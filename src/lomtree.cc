@@ -32,12 +32,23 @@ void LOMtree::updateStats(int32_t node, int32_t label, Vector& probas) {
 }
 
 
+void LOMtree::printPath(int32_t node) {
+  printf("PATH TO NODE %d : ", node);
+  for (int32_t i = paths[node].size() - 1; i >= 0 ; i--) {
+    printf("(%d, %d) ", paths[node][i], codesLOM[node][i]);
+  }
+  printf("\n");
+}
+
+
 // build paths and codes
 void LOMtree::updatePaths() {
   paths.resize(0);
   codesLOM.resize(0);
   int32_t max_depth = 0;
   real tot_depth = 0;
+  real weight_depth = 0;
+  real tot_weight = 0;
   for (int32_t i = 0; i < nlabels_; i++) {
     std::vector<int32_t> path;
     std::vector<int32_t> codeLOM;
@@ -51,14 +62,15 @@ void LOMtree::updatePaths() {
     }
     max_depth = (max_depth > path.size()) ? max_depth : path.size();
     tot_depth += path.size() + 1;
+    weight_depth += (path.size() + 1) * treeLOM[i].count;
+    tot_weight += treeLOM[i].count;
     paths.push_back(path);
     codesLOM.push_back(codeLOM);
   }
-  printf("Tree built, depth %d, average %f, %d leaves, %d labels, %d nodes \n",
-         max_depth + 1, tot_depth / nlabels_, nleaves_, nlabels_, nnodes_);
-  printf("MAIN node %d : (%d, %d) - (%d, %d)\n",
-        1105, paths[1105][paths[1105].size() - 1], codesLOM[1105][paths[1105].size() - 1],
-        paths[1105][0], codesLOM[1105][0]);
+  printf("Tree built, depth %d, average %f, weighted average %f, %d leaves, %d labels, %d nodes \n",
+         max_depth + 1, tot_depth / nlabels_, weight_depth / tot_weight, nleaves_, nlabels_, nnodes_);
+  printPath(1105);
+  printPath(20000);
 }
 
 
@@ -82,6 +94,7 @@ void LOMtree::buildLOMTree(const std::vector<int64_t>& counts,
   nlabels_ = counts.size();
   nleaves_ = (nlabels_ / (arity_ - 1) + 1) * (arity_ - 1) + 1;
   nnodes_  = nleaves_ + ((nleaves_ - 1) / (arity_ - 1));
+  std::bernoulli_distribution bern(1. - 1./(5 * arity_));
   // initialize the tree
   treeLOM.resize(nnodes_);
   node_labels.resize(nnodes_);
@@ -108,7 +121,8 @@ void LOMtree::buildLOMTree(const std::vector<int64_t>& counts,
     int32_t ncount = 0, curr_labels = 0;
     int32_t cid;
     for (int32_t j = 0; j < arity_; j++) {
-      if (leaf >= 0 && treeLOM[leaf].count < treeLOM[node].count) {
+      //~ if (leaf >= 0 && (node >= i or bern(generator))) { //TODO: random-ish tree
+      if (leaf >= 0 && treeLOM[leaf].count < treeLOM[node].count) { //TODO: huffman option
         cid = leaf--;
       } else {
         cid = node++;
@@ -180,6 +194,7 @@ void LOMtree::computeNodeStats(int32_t node) {
     for (int32_t j = 0; j < arity_; j++) {
       treeLOM[node].grad_j[i][j] = treeLOM[node].q[i] * (1 - treeLOM[node].q[i]);
       treeLOM[node].grad_j[i][j] *= ((treeLOM[node].p_cond[i][j] > treeLOM[node].p[j]) ? 1.0 : -1.0);
+      // TODO: decide
       treeLOM[node].grad_j[i][j] *= treeLOM[node].p_cond[i][j]; // or not, depending on objective
       // pre-sort (label, child) pairs
       treeLOM[node].sort_queue.push(AuxTriple(i, j, treeLOM[node].grad_j[i][j]));
@@ -214,10 +229,6 @@ void LOMtree::assignNodeChildren(int32_t node) {
       remaining -= 1;
     }
   }
-  //~ // ASSERT -- false...
-  //~ for (int32_t j = 0; j < arity_; j++) {
-    //~ assert(treeLOM[node].children[j] >= nleaves_ or treeLOM[node].children_labels[j].size() <= 1);
-  //~ }
 }
 
 
@@ -312,8 +323,57 @@ int32_t LOMtree::getNNodes() {
   return nnodes_;
 }
 
+int32_t LOMtree::getNLabels() {
+  return nlabels_;
+}
+
 NodeLOM LOMtree::getNode(int32_t node){
   return treeLOM[node];
+}
+
+// save / load functions
+
+void LOMtree::save(std::ostream& out) {
+  out.write((char*) &arity_, sizeof(int32_t));
+  out.write((char*) &nlabels_, sizeof(int32_t));
+  out.write((char*) &nleaves_, sizeof(int32_t));
+  out.write((char*) &nnodes_, sizeof(int32_t));
+  for (int32_t i = 0; i < nnodes_; i++) {
+    auto node_lm = treeLOM[i];
+    out.write((char*) &node_lm.parent, sizeof(int32_t));
+    out.write((char*) &node_lm.pindex, sizeof(int32_t));
+    out.write((char*) &node_lm.count, sizeof(int32_t));
+    int32_t nchildren = node_lm.children.size();
+    out.write((char*) &nchildren, sizeof(int32_t));
+    for (int32_t j = 0; j < nchildren; j++) {
+      out.write((char*) &node_lm.children[j], sizeof(int32_t));
+    }
+  }
+}
+
+void LOMtree::load(std::istream& in) {
+  arity_ = 0;
+  in.read((char*) &arity_, sizeof(int32_t));
+  printf("arity %d\n", arity_);
+  in.read((char*) &nlabels_, sizeof(int32_t));
+  in.read((char*) &nleaves_, sizeof(int32_t));
+  in.read((char*) &nnodes_, sizeof(int32_t));
+  printf("nnodes %d\n", nnodes_);
+  treeLOM.resize(nnodes_);
+  for (int32_t i = 0; i < nnodes_; i++) {
+    in.read((char*) &treeLOM[i].parent, sizeof(int32_t));
+    in.read((char*) &treeLOM[i].pindex, sizeof(int32_t));
+    in.read((char*) &treeLOM[i].count, sizeof(int32_t));
+    //~ if (i == 0) printf("%d %d %d \n", treeLOM[i].parent, treeLOM[i].pindex, treeLOM[i].count);
+    int32_t nchildren;
+    in.read((char*) &nchildren, sizeof(int32_t));
+    treeLOM[i].children.resize(nchildren);
+    for (int32_t j = 0; j < nchildren; j++) {
+      in.read((char*) &treeLOM[i].children[j], sizeof(int32_t));
+    }
+  }
+  printf("rebuilding tree\n");
+  updatePaths();
 }
 
 }

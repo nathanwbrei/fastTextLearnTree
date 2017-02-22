@@ -134,7 +134,7 @@ void Model::predict(const std::vector<int32_t>& input, int32_t k,
   computeHidden(input, hidden);
   if (args_->loss == loss_name::hs) {
     dfs(k, 2 * osz_ - 2, 0.0, heap, hidden);
-  } else if (args_->loss == loss_name::hsm){
+  } else if (args_->loss == loss_name::hsm or args_->loss == loss_name::lom){
     dfsM(k, nnodes_ - 1, 0.0, heap, hidden, outputM);
   } else {
     findKBest(k, heap, hidden, output);
@@ -484,6 +484,7 @@ void Model::setTreeLOM(const std::shared_ptr<LOMtree> lomtree) {
   lomtree_  = lomtree;
   nleaves_  = lomtree_->getNLeaves();
   nnodes_   = lomtree_->getNNodes();
+  osz_      = lomtree_->getNLabels();
   treeM.resize(nnodes_);
 }
 
@@ -501,6 +502,10 @@ void Model::updateTreeLOM() {
     treeM[node].pindex  = node_lm.pindex;
   }
   
+  for (int32_t i = nleaves_; i < nnodes_; i++) {
+    treeM[i].probas = new real[arity_];
+  }
+  
   // build paths and codes
   paths.resize(0);
   codesM.resize(0);
@@ -516,11 +521,6 @@ void Model::updateTreeLOM() {
     paths.push_back(path);
     codesM.push_back(codeM);
   }
-  
-  //~ printf("COPYING %d %d\n", treeM[1105].parent - nleaves_, lomtree_->getNode(1105).parent - nleaves_);
-  //~ printf("COPY node %d : (%d, %d) - (%d, %d) \n",
-        //~ 1105, paths[1105][paths[1105].size() - 1], codesM[1105][paths[1105].size() - 1],
-        //~ paths[1105][0], codesM[1105][0]);
 }
 
 }

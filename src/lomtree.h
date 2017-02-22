@@ -7,6 +7,12 @@
 #include <boost/unordered_map.hpp>
 #include <queue>
 
+#include <random>
+
+#include <istream>
+#include <ostream>
+#include <string>
+
 #include <assert.h> 
 
 #include "vector.h"
@@ -71,12 +77,14 @@ class LOMtree {
     std::vector< std::vector<int32_t> > codesLOM;
     // AUXILIARY VARIABLES
     std::vector<int32_t> freeNodeIds;
+    std::default_random_engine generator;
 
   public:
     LOMtree();
     ~LOMtree();
   
     void updateStats(int32_t, int32_t, Vector&);
+    void printPath(int32_t);
     void updatePaths();
     void initNodeStats(int32_t);
     void buildLOMTree(const std::vector<int64_t>&, int32_t);
@@ -88,7 +96,11 @@ class LOMtree {
     
     int32_t getNLeaves();
     int32_t getNNodes();
+    int32_t getNLabels();
     NodeLOM getNode(int32_t);
+    
+    void save(std::ostream&);
+    void load(std::istream&);
 };
 
 }

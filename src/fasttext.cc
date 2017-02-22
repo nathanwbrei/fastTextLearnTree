@@ -48,6 +48,7 @@ void FastText::saveVectors() {
 }
 
 void FastText::saveModel() {
+  printf("Saving model \n");
   std::ofstream ofs(args_->output + ".bin", std::ofstream::binary);
   if (!ofs.is_open()) {
     std::cerr << "Model file cannot be opened for saving!" << std::endl;
@@ -57,6 +58,12 @@ void FastText::saveModel() {
   dict_->save(ofs);
   input_->save(ofs);
   output_->save(ofs);
+  // LOM tree
+  if (args_->loss == loss_name::lom) {
+    printf("Saving tree \n");
+    lomtree_->save(ofs);
+    printf("Saved tree \n");
+  }
   ofs.close();
 }
 
@@ -71,6 +78,7 @@ void FastText::loadModel(const std::string& filename) {
 }
 
 void FastText::loadModel(std::istream& in) {
+  printf("loading model\n");
   args_ = std::make_shared<Args>();
   dict_ = std::make_shared<Dictionary>(args_);
   input_ = std::make_shared<Matrix>();
@@ -79,9 +87,17 @@ void FastText::loadModel(std::istream& in) {
   dict_->load(in);
   input_->load(in);
   output_->load(in);
+  // LOM tree
+  if (args_->loss == loss_name::lom) {
+    lomtree_ = std::make_shared<LOMtree>();
+    //~ printf("loading tree\n");
+    lomtree_->load(in);
+    //~ printf("loaded tree\n");
+  }
   model_ = std::make_shared<Model>(input_, output_, args_, 0);
   if (args_->model == model_name::sup) {
     model_->setLabelCount(dict_->nlabels());
+    if (args_->loss == loss_name::lom) { model_->setTreeLOM(lomtree_); }
     model_->setTargetCounts(dict_->getCounts(entry_type::label));
   } else {
     model_->setTargetCounts(dict_->getCounts(entry_type::word));
@@ -163,7 +179,7 @@ void FastText::test(std::istream& in, int32_t k) {
       nexamples++;
       nlabels += labels.size();
     }
-    if (nexamples % 50000 == 0) {
+    if (nexamples % 100000 == 0) {
       std::cout << std::setprecision(3);
       std::cout << "P@" << k << ": " << precision / (k * nexamples) << " ";
       std::cout << "R@" << k << ": " << precision / nlabels << " ";
@@ -386,6 +402,7 @@ void FastText::train(std::shared_ptr<Args> args) {
     nextLOMupdate = periodLOMupdate;
     lomtree_ = std::make_shared<LOMtree>();
     lomtree_->buildLOMTree(dict_->getCounts(entry_type::label), args_->arity);
+    //~ lomtree_->updateTree();
   }
 
   if (args_->model == model_name::sup) {
